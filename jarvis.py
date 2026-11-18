@@ -800,13 +800,14 @@ def sistema_prompt():
 # compatibilidade com o modo terminal
 SISTEMA = sistema_prompt()
 
-def cortar_historico(mensagens, manter=16):
+def cortar_historico(mensagens, manter=10):
     return [m for m in mensagens if m["role"] == "system"] + \
            [m for m in mensagens if m["role"] != "system"][-manter:]
 
 def chamada_local(mensagens, modelo):
     corpo = {"model": modelo, "messages": mensagens, "stream": False,
-             "tools": FERRAMENTAS, "options": {"num_ctx": 2048},
+             "tools": FERRAMENTAS,
+             "options": {"num_ctx": 2048, "num_predict": 400},
              "keep_alive": "30m"}
     req = urllib.request.Request("http://localhost:11434/api/chat",
                                  data=json.dumps(corpo).encode("utf-8"),
@@ -818,7 +819,8 @@ def chamada_local(mensagens, modelo):
 def chamada_local_stream(mensagens, modelo, ao_receber=None):
     """Versão em tempo real: chama ao_receber(texto_acumulado) a cada pedaço."""
     corpo = {"model": modelo, "messages": mensagens, "stream": True,
-             "tools": FERRAMENTAS, "options": {"num_ctx": 2048},
+             "tools": FERRAMENTAS,
+             "options": {"num_ctx": 2048, "num_predict": 400},
              "keep_alive": "30m"}
     req = urllib.request.Request("http://localhost:11434/api/chat",
                                  data=json.dumps(corpo).encode("utf-8"),

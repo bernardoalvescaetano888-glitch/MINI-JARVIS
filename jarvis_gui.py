@@ -897,12 +897,18 @@ class JarvisApp(ctk.CTk):
             self._rolar_fim()
 
         def ao_receber(texto_total):
-            def atualizar():
-                if estado["viva"] is None:
-                    criar_viva()
-                estado["viva"].configure(text=texto_total)
-                self._rolar_fim()
-            self.after(0, atualizar)
+            # agrupa as letras num único atualização (interface leve)
+            estado["pendente"] = texto_total
+            self.after(0, lambda: _drenar())
+
+        def _drenar():
+            texto = estado.pop("pendente", None)
+            if texto is None:
+                return  # outra chamada já drenou
+            if estado["viva"] is None:
+                criar_viva()
+            estado["viva"].configure(text=texto)
+            self._rolar_fim()
 
         try:
             for passo in range(10):
