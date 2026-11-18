@@ -20,6 +20,11 @@ import time
 import tkinter.messagebox as mbox
 import urllib.request
 import webbrowser
+
+try:
+    import winsound
+except Exception:
+    winsound = None
 from datetime import datetime
 
 import customtkinter as ctk
@@ -160,6 +165,19 @@ def ferramenta_gui(nome, args):
 
     if nome == "pesquisar_web":
         return nucleo.t_pesquisar_web(args.get("consulta", ""))
+
+    if nome == "tarefas":
+        return nucleo.t_tarefas(args.get("acao", "listar"),
+                                args.get("texto", ""), args.get("numero", ""))
+
+    if nome == "info_pc":
+        return nucleo.t_info_pc()
+
+    if nome == "gerar_senha":
+        return nucleo.t_gerar_senha(args.get("tamanho", "16"))
+
+    if nome == "capturar_tela":
+        return nucleo.t_capturar_tela()
 
     return f"Ferramenta desconhecida: {nome}"
 
@@ -377,10 +395,20 @@ class JarvisApp(ctk.CTk):
     def _monitorar_sistema(self):
         try:
             import psutil
+            ram = psutil.virtual_memory().percent
             self.card_rede.configure(
                 text=("Online" if self.online else "Offline")
-                + f" · RAM {psutil.virtual_memory().percent}%"
+                + f" · RAM {ram}%"
                 + f" · CPU {int(psutil.cpu_percent())}%")
+            # modo economia: RAM apertada → sugerir IA mais leve (1 vez)
+            if (ram >= 85 and not nucleo.CFG.get("aviso_ram_dado")
+                    and nucleo.CFG.get("modelo") not in ("qwen2.5:0.5b",
+                                                         "smollm2:360m")):
+                nucleo.CFG["aviso_ram_dado"] = True
+                nucleo.salvar_cfg(nucleo.CFG)
+                self._bolha("🟡 Sua RAM está muito cheia! Sugestão: troque "
+                            "para uma IA mais leve na Vitrine (qwen2.5:0.5b) "
+                            "pra não travar.", ferramenta=True)
         except Exception:
             pass
         self.after(5000, self._monitorar_sistema)
@@ -402,7 +430,7 @@ class JarvisApp(ctk.CTk):
         nome.pack(side="left", padx=(10, 0))
         ctk.CTkLabel(nome, text="MINI-JARVIS", font=("Segoe UI", 16, "bold"),
                      text_color=TXT).pack(anchor="w")
-        ctk.CTkLabel(nome, text="v2.2", font=("Consolas", 10),
+        ctk.CTkLabel(nome, text="v3.1", font=("Consolas", 10),
                      text_color=TXT_FRACO).pack(anchor="w")
 
         ctk.CTkLabel(self.lateral, text="  MENU", font=("Segoe UI", 10, "bold"),
@@ -416,6 +444,7 @@ class JarvisApp(ctk.CTk):
         ctk.CTkLabel(self.lateral, text="  FERRAMENTAS", font=("Segoe UI", 10, "bold"),
                      text_color=TXT_FRACO).pack(fill="x", pady=(14, 4))
         for chave, rotulo in [("vitrine", "🧠     Vitrine de IAs"),
+                              ("agenda", "🗓     Agenda"),
                               ("sites", "🌐     Sites"),
                               ("plugins", "🔌     Plugins"),
                               ("ajustes", "⚙️     Ajustes")]:
@@ -424,6 +453,14 @@ class JarvisApp(ctk.CTk):
         # cartão de status no rodapé
         rodape = ctk.CTkFrame(self.lateral, fg_color="transparent")
         rodape.pack(side="bottom", fill="x", padx=12, pady=14)
+        ctk.CTkButton(rodape, text="⭐ v3.1 · estrela no GitHub", height=28,
+                      corner_radius=8, font=("Segoe UI", 11),
+                      fg_color="transparent", hover_color=HOVER_ITEM,
+                      text_color=ACENTO, anchor="w",
+                      command=lambda: webbrowser.open(
+                          "https://github.com/"
+                          "bernardoalvescaetano888-glitch/MINI-JARVIS")
+                      ).pack(anchor="w", fill="x", pady=(0, 6))
         ctk.CTkSwitch(rodape, text="🗣 Jarvis fala", progress_color=ACENTO,
                       command=self._trocar_fala).pack(anchor="w", pady=(0, 8))
         cartao = ctk.CTkFrame(rodape, fg_color=CARD, corner_radius=12)
@@ -475,6 +512,7 @@ class JarvisApp(ctk.CTk):
         self.telas = {}
         for chave, construtor in [("chat", self._tela_chat),
                                   ("vitrine", self._tela_vitrine),
+                                  ("agenda", self._tela_agenda),
                                   ("sites", self._tela_sites),
                                   ("plugins", self._tela_plugins),
                                   ("historico", self._tela_historico),
@@ -489,6 +527,8 @@ class JarvisApp(ctk.CTk):
                 tela.pack(fill="both", expand=True, padx=20, pady=18)
                 if nome == "vitrine":
                     self._recarregar_vitrine()
+                elif nome == "agenda":
+                    self._recarregar_agenda()
                 elif nome == "historico":
                     self._recarregar_historico()
                 elif nome == "plugins":
@@ -903,6 +943,12 @@ class JarvisApp(ctk.CTk):
                 if not fala:
                     self.after(0, lambda: self._bolha("(sem resposta)"))
                 mensagens.append({"role": "assistant", "content": fala})
+                # 🔔 som curto de resposta (estilo JARVIS)
+                if winsound:
+                    threading.Thread(
+                        target=lambda: (winsound.Beep(880, 90),
+                                        winsound.Beep(1174, 130)),
+                        daemon=True).start()
                 if nucleo.CFG.get("falar") and fala:
                     threading.Thread(target=self._falar, args=(fala,),
                                      daemon=True).start()
@@ -1012,6 +1058,119 @@ class JarvisApp(ctk.CTk):
         else:
             self.vit_aviso.configure(text="✘ download falhou")
         self._recarregar_vitrine()
+
+    # ── TELA: AGENDA (lembretes + tarefas) ───────────────────
+    def _tela_agenda(self, tela):
+        self._cabecalho(tela, "🗓", "Agenda", "lembretes que tocam sozinhos e tarefas")
+        barra = ctk.CTkFrame(tela, fg_color=CARD, corner_radius=14)
+        barra.pack(fill="x", pady=(4, 10))
+        self.tarefa_entrada = ctk.CTkEntry(
+            barra, placeholder_text="  nova tarefa (ex: entregar trabalho de história)",
+            height=40, corner_radius=10, fg_color="transparent",
+            border_width=1, border_color=("gray70", "#3a3a3b"))
+        self.tarefa_entrada.pack(side="left", fill="x", expand=True,
+                                 padx=10, pady=10)
+        ctk.CTkButton(barra, text="＋ Tarefa", width=110, height=40,
+                      corner_radius=10, font=FONTE_P,
+                      fg_color=ACENTO, hover_color=ACENTO_2,
+                      text_color="#ffffff",
+                      command=self._add_tarefa).pack(side="left", padx=(0, 10))
+        self.agenda_lista = ctk.CTkScrollableFrame(tela, fg_color=CARD,
+                                                   corner_radius=16)
+        self.agenda_lista.pack(fill="both", expand=True)
+
+    def _recarregar_agenda(self):
+        for w in self.agenda_lista.winfo_children():
+            w.destroy()
+        from datetime import datetime as _dt
+        # lembretes agendados
+        lembretes = nucleo.carregar_lembretes()
+        if lembretes:
+            ctk.CTkLabel(self.agenda_lista, text="⏰ Lembretes agendados",
+                         font=("Segoe UI", 13, "bold"),
+                         text_color=ACENTO).pack(anchor="w", padx=14,
+                                                 pady=(12, 4))
+            for l in sorted(lembretes, key=lambda x: x.get("quando_ts", 0)):
+                quando = str(l.get("quando", ""))[:16].replace("T", " ")
+                linha = ctk.CTkFrame(self.agenda_lista,
+                                     fg_color="transparent")
+                linha.pack(fill="x", pady=5, padx=14)
+                ctk.CTkLabel(linha, text=f"⏰  {quando}", width=120,
+                             anchor="w", font=("Consolas", 12),
+                             text_color=TXT_MEDIO).pack(side="left")
+                ctk.CTkLabel(linha, text=l.get("texto", ""), anchor="w",
+                             font=("Segoe UI", 13), text_color=TXT
+                             ).pack(side="left", fill="x", expand=True)
+                ctk.CTkButton(linha, text="✖", width=34, height=30,
+                              corner_radius=10, font=FONTE_P,
+                              fg_color="transparent", hover_color=HOVER_ITEM,
+                              text_color=TXT_MEDIO,
+                              command=lambda i=l: self._apagar_lembrete(i)
+                              ).pack(side="left")
+        # tarefas
+        tarefas = nucleo.carregar_tarefas()
+        ctk.CTkLabel(self.agenda_lista, text="📝 Lista de tarefas",
+                     font=("Segoe UI", 13, "bold"),
+                     text_color=ACENTO).pack(anchor="w", padx=14,
+                                             pady=(14, 4))
+        if not tarefas:
+            ctk.CTkLabel(self.agenda_lista,
+                         text="(nenhuma tarefa — peça ao Jarvis pelo chat!)",
+                         font=FONTE_P, text_color=TXT_FRACO
+                         ).pack(anchor="w", padx=14)
+        for i, t in enumerate(tarefas):
+            linha = ctk.CTkFrame(self.agenda_lista, fg_color="transparent")
+            linha.pack(fill="x", pady=5, padx=14)
+            feito = t.get("feita", False)
+            texto = ("✔ " + t["texto"]) if feito else t["texto"]
+            cor = TXT_FRACO if feito else TXT
+            ctk.CTkButton(linha, text="✅" if feito else "⬜", width=34,
+                          height=30, corner_radius=10, font=FONTE_P,
+                          fg_color="transparent", hover_color=HOVER_ITEM,
+                          text_color=cor,
+                          command=lambda n=i: self._alternar_tarefa(n)
+                          ).pack(side="left")
+            ctk.CTkLabel(linha, text=texto, anchor="w",
+                         font=("Segoe UI", 13, "overstrike" if feito else "normal"),
+                         text_color=cor).pack(side="left", fill="x",
+                                              expand=True)
+            if not feito:
+                ctk.CTkButton(linha, text="✖", width=34, height=30,
+                              corner_radius=10, font=FONTE_P,
+                              fg_color="transparent", hover_color=HOVER_ITEM,
+                              text_color=TXT_MEDIO,
+                              command=lambda n=i: self._apagar_tarefa(n)
+                              ).pack(side="left")
+
+    def _add_tarefa(self):
+        texto = self.tarefa_entrada.get().strip()
+        if not texto:
+            return
+        self.tarefa_entrada.delete(0, "end")
+        tarefas = nucleo.carregar_tarefas()
+        tarefas.append({"texto": texto, "feita": False})
+        nucleo.salvar_tarefas(tarefas)
+        self._recarregar_agenda()
+
+    def _alternar_tarefa(self, indice):
+        tarefas = nucleo.carregar_tarefas()
+        if 0 <= indice < len(tarefas):
+            tarefas[indice]["feita"] = not tarefas[indice].get("feita", False)
+            nucleo.salvar_tarefas(tarefas)
+        self._recarregar_agenda()
+
+    def _apagar_tarefa(self, indice):
+        tarefas = nucleo.carregar_tarefas()
+        if 0 <= indice < len(tarefas):
+            tarefas.pop(indice)
+            nucleo.salvar_tarefas(tarefas)
+        self._recarregar_agenda()
+
+    def _apagar_lembrete(self, item):
+        lembretes = nucleo.carregar_lembretes()
+        lembretes = [l for l in lembretes if l is not item]
+        nucleo.salvar_lembretes(lembretes)
+        self._recarregar_agenda()
 
     # ── TELA: SITES ──────────────────────────────────────────
     def _tela_sites(self, tela):

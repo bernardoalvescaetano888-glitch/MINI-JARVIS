@@ -125,6 +125,22 @@ def salvar_lembretes(lista):
         json.dump(lista, f, ensure_ascii=False, indent=1)
 
 # ════════════════════════════════════════════
+#  LISTA DE TAREFAS
+# ════════════════════════════════════════════
+ARQ_TAREFAS = os.path.join(PASTA_BASE, "tarefas.json")
+
+def carregar_tarefas():
+    try:
+        with open(ARQ_TAREFAS, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def salvar_tarefas(lista):
+    with open(ARQ_TAREFAS, "w", encoding="utf-8") as f:
+        json.dump(lista, f, ensure_ascii=False, indent=1)
+
+# ════════════════════════════════════════════
 #  INTERFACE (cores, banner, perguntas)
 # ════════════════════════════════════════════
 def cor(nome):   return "\033[" + TEMAS[CFG["tema"]][nome] + "m"
@@ -389,6 +405,93 @@ def t_ler_site(url):
     texto = re.sub(r"\s+", " ", texto).strip()
     return f"Conteúdo de {url}:\n" + texto[:4000]
 
+def t_tarefas(acao, texto, numero):
+    """Lista de tarefas: listar, adicionar, concluir, apagar."""
+    tarefas = carregar_tarefas()
+    acao = str(acao).lower().strip()
+    if acao == "listar":
+        if not tarefas:
+            return "Nenhuma tarefa na lista."
+        linhas = []
+        for i, t in enumerate(tarefas):
+            marca = "✔" if t.get("feita") else "⬜"
+            linhas.append(f"{i}. {marca} {t['texto']}")
+        return "Tarefas:\n" + "\n".join(linhas)
+    if acao == "adicionar":
+        texto = str(texto).strip()
+        if not texto:
+            return "Tarefa vazia."
+        tarefas.append({"texto": texto, "feita": False})
+        salvar_tarefas(tarefas)
+        return f"Tarefa adicionada: {texto} (veja na página Agenda do app)"
+    if acao == "concluir":
+        try:
+            tarefas[int(numero)]["feita"] = True
+            salvar_tarefas(tarefas)
+            return f"Tarefa {numero} concluída! ✅"
+        except Exception:
+            return "Número inválido. Use tarefas(listar) para ver os números."
+    if acao == "apagar":
+        try:
+            tarefa = tarefas.pop(int(numero))
+            salvar_tarefas(tarefas)
+            return f"Tarefa apagada: {tarefa['texto']}"
+        except Exception:
+            return "Número inválido."
+    return "Ações: listar, adicionar, concluir, apagar"
+
+def t_info_pc():
+    """Informações do PC do usuário."""
+    try:
+        import psutil
+        bateria = ""
+        try:
+            b = psutil.sensors_battery()
+            if b:
+                bateria = f", bateria {int(b.percent)}%" + \
+                          (" (carregando)" if b.power_plugged else "")
+        except Exception:
+            pass
+        return ("PC: RAM livre {:.1f} GB de {:.1f} GB ({}% usada), "
+                "CPU {}%, {} núcleos{}".format(
+                    psutil.virtual_memory().available / 1e9,
+                    psutil.virtual_memory().total / 1e9,
+                    psutil.virtual_memory().percent,
+                    int(psutil.cpu_percent(interval=0.5)),
+                    psutil.cpu_count(), bateria))
+    except Exception as e:
+        return f"Não consegui ler: {e}"
+
+def t_gerar_senha(tamanho):
+    """Cria uma senha forte aleatória."""
+    import secrets
+    import string
+    try:
+        n = max(8, min(64, int(tamanho)))
+    except Exception:
+        n = 16
+    letras = string.ascii_letters + string.digits + "!@#$%&*?"
+    senha = "".join(secrets.choice(letras) for _ in range(n))
+    return f"Senha forte ({n} caracteres): {senha}\nGuarde num lugar seguro!"
+
+def t_capturar_tela():
+    """Tira uma captura de tela e salva na pasta imagens."""
+    from datetime import datetime as _dt
+    pasta = os.path.join(PASTA_BASE, "imagens")
+    os.makedirs(pasta, exist_ok=True)
+    caminho = os.path.join(
+        pasta, "print_" + _dt.now().strftime("%Y%m%d_%Hh%M%S") + ".png")
+    try:
+        from PIL import ImageGrab
+        ImageGrab.grab().save(caminho)
+    except Exception as e:
+        return f"Não consegui capturar: {e}"
+    try:
+        os.startfile(caminho)
+    except Exception:
+        pass
+    return f"Captura de tela salva e aberta: {caminho}"
+
 def t_calcular(expressao):
     """Faz contas matemáticas com segurança."""
     import re as _re
@@ -597,6 +700,22 @@ FERRAMENTAS = [
         "parameters": {"type": "object", "properties": {
             "acao": {"type": "string", "enum": ["status", "log", "commit", "init"]},
             "mensagem": {"type": "string", "description": "mensagem do commit"}}, "required": ["acao"]}}},
+    {"type": "function", "function": {"name": "tarefas",
+        "description": "Gerencia a lista de tarefas do usuário. acao: listar, adicionar, concluir, apagar. Para adicionar, mande o texto; para concluir/apagar, mande o numero (da listagem).",
+        "parameters": {"type": "object", "properties": {
+            "acao": {"type": "string", "enum": ["listar", "adicionar", "concluir", "apagar"]},
+            "texto": {"type": "string"},
+            "numero": {"type": "string"}}, "required": ["acao"]}}},
+    {"type": "function", "function": {"name": "info_pc",
+        "description": "Mostra RAM livre, uso de CPU, núcleos e bateria do PC do usuário.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "gerar_senha",
+        "description": "Cria uma senha forte aleatória e segura.",
+        "parameters": {"type": "object", "properties": {
+            "tamanho": {"type": "string", "description": "ex: 16"}}}}},
+    {"type": "function", "function": {"name": "capturar_tela",
+        "description": "Tira uma captura de tela do PC, salva e abre para o usuário.",
+        "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "calcular",
         "description": "Faz uma conta matemática exata (soma, subtração, multiplicação, divisão, potência com ^). Use sempre para cálculos, não calcule de cabeça.",
         "parameters": {"type": "object", "properties": {
@@ -634,6 +753,12 @@ EXECUTAR = {
     "criar_lembrete": lambda a: t_criar_lembrete(a.get("quando", ""), a.get("texto", "")),
     "calcular":      lambda a: t_calcular(a.get("expressao", "")),
     "pesquisar_web": lambda a: t_pesquisar_web(a.get("consulta", "")),
+    "tarefas":       lambda a: t_tarefas(a.get("acao", "listar"),
+                                         a.get("texto", ""),
+                                         a.get("numero", "")),
+    "info_pc":       lambda a: t_info_pc(),
+    "gerar_senha":   lambda a: t_gerar_senha(a.get("tamanho", "16")),
+    "capturar_tela": lambda a: t_capturar_tela(),
 }
 
 # ════════════════════════════════════════════
@@ -652,7 +777,10 @@ def sistema_prompt():
         f"Agora são {agora.strftime('%H:%M')} de {dias_sem[agora.weekday()]}, "
         f"{agora.strftime('%d/%m/%Y')} — use isso para perguntas de hora/data. "
         "Para contas matemáticas, USE calcular. Para o usuário pesquisar algo "
-        "na internet, USE pesquisar_web. "
+        "na internet, USE pesquisar_web. Para a lista de tarefas dele (ex: "
+        "'adiciona tarefa...'), USE tarefas. Se ele perguntar sobre o PC "
+        "(RAM, CPU, bateria), USE info_pc. Para ele pedir senha forte, USE "
+        "gerar_senha. Para print de tela, USE capturar_tela. "
         "Você é especialista em CRIAR e EDITAR ARQUIVOS: para algo novo, USE "
         "criar_arquivo; para mudar um trecho de arquivo existente (inclusive o "
         "código deste próprio programa), USE editar_arquivo. Para tarefas "

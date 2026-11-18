@@ -6,7 +6,7 @@
 
 [Setup]
 AppName=MINI-JARVIS
-AppVersion=3.0
+AppVersion=3.1
 AppPublisher=Projeto Escolar
 DefaultDirName={autopf}\MINI-JARVIS
 DefaultGroupName=MINI-JARVIS
