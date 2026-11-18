@@ -874,6 +874,55 @@ def chamada_nuvem(mensagens, cfg):
             for t in msg["tool_calls"]]
     return saida
 
+def chamada_nuvem_stream(mensagens, cfg, ao_receber=None):
+    """Nuvem EM TEMPO REAL (SSE): palavras aparecem desde o 1º segundo."""
+    corpo = {"model": cfg.get("modelo_nuvem"), "messages": mensagens,
+             "tools": FERRAMENTAS, "stream": True}
+    req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
+                                 data=json.dumps(corpo).encode("utf-8"),
+                                 headers={"Content-Type": "application/json",
+                                          "Authorization": "Bearer " + cfg["chave_nuvem"],
+                                          "HTTP-Referer": "https://github.com/bernardoalvescaetano888-glitch/MINI-JARVIS",
+                                          "X-Title": "MINI-JARVIS"})
+    fala = ""
+    ferramentas = []
+    args_parciais = {}
+    with urllib.request.urlopen(req, timeout=120) as r:
+        for linha in r:
+            linha = linha.decode("utf-8", errors="replace").strip()
+            if not linha.startswith("data:"):
+                continue
+            dados = linha[5:].strip()
+            if dados == "[DONE]":
+                break
+            try:
+                pedaco = json.loads(dados)
+            except Exception:
+                continue
+            delta = pedaco.get("choices", [{}])[0].get("delta", {})
+            texto = delta.get("content") or ""
+            if texto:
+                fala += texto
+                if ao_receber:
+                    ao_receber(fala)
+            for tc in delta.get("tool_calls") or []:
+                fn = tc.get("function", {}) or {}
+                chave = tc.get("index", 0)
+                nome = fn.get("name", "")
+                if nome:
+                    args_parciais.setdefault(chave, {"name": nome, "args": ""})
+                if chave in args_parciais:
+                    if nome:
+                        args_parciais[chave]["name"] = nome
+                    args_parciais[chave]["args"] += fn.get("arguments") or ""
+    for chave, tc in args_parciais.items():
+        ferramentas.append({"function": {"name": tc["name"],
+                                          "arguments": tc["args"] or "{}"}})
+    saida = {"content": fala}
+    if ferramentas:
+        saida["tool_calls"] = ferramentas
+    return saida
+
 def pensar(mensagens, cfg, online):
     if online and cfg.get("chave_nuvem"):
         try:

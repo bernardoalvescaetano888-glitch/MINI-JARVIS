@@ -916,8 +916,9 @@ class JarvisApp(ctk.CTk):
                 # sem internet → IA local em tempo real
                 if self.online and nucleo.CFG.get("chave_nuvem"):
                     try:
-                        resposta = nucleo.chamada_nuvem(
-                            nucleo.cortar_historico(mensagens), nucleo.CFG)
+                        resposta = nucleo.chamada_nuvem_stream(
+                            nucleo.cortar_historico(mensagens), nucleo.CFG,
+                            ao_receber)
                     except Exception:
                         resposta = nucleo.chamada_local_stream(
                             nucleo.cortar_historico(mensagens),
