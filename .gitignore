@@ -1,0 +1,13 @@
+# segredos e dados pessoais — NUNCA enviar ao Git
+config.json
+memoria.json
+lembretes.json
+chats/
+imagens/
+
+# temporários do Python
+__pycache__/
+*.pyc
+
+# saída do instalador (binário grande, gerado por compile)
+Output/
