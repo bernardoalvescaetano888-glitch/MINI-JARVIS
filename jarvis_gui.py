@@ -915,11 +915,27 @@ class JarvisApp(ctk.CTk):
                 # com internet + chave → IA da nuvem (mais inteligente);
                 # sem internet → IA local em tempo real
                 if self.online and nucleo.CFG.get("chave_nuvem"):
-                    try:
-                        resposta = nucleo.chamada_nuvem_stream(
-                            nucleo.cortar_historico(mensagens), nucleo.CFG,
-                            ao_receber)
-                    except Exception:
+                    # tenta o modelo configurado + 2 de reserva grátis;
+                    # só no fim cai pra IA local (mais lenta)
+                    resposta = None
+                    for modelo_alt in [nucleo.CFG.get("modelo_nuvem"),
+                                       "google/gemma-4-31b-it:free",
+                                       "inclusionai/ling-3.2-flash:free"]:
+                        if not modelo_alt:
+                            continue
+                        try:
+                            cfg_alt = dict(nucleo.CFG, modelo_nuvem=modelo_alt)
+                            resposta = nucleo.chamada_nuvem_stream(
+                                nucleo.cortar_historico(mensagens),
+                                cfg_alt, ao_receber)
+                            break
+                        except Exception:
+                            continue
+                    if resposta is None:
+                        self.after(0, lambda: self._bolha(
+                            "☁ Nuvem grátis esgotou por hoje — usando IA "
+                            "local (mais lenta). Amanhã volta ao normal!",
+                            ferramenta=True))
                         resposta = nucleo.chamada_local_stream(
                             nucleo.cortar_historico(mensagens),
                             nucleo.CFG["modelo"], ao_receber)
@@ -961,8 +977,9 @@ class JarvisApp(ctk.CTk):
                                      daemon=True).start()
                 break
         except Exception as e:
-            self.after(0, lambda: (self._fim_pensando(),
-                                   self._bolha(f"⚠ Erro: {e}", ferramenta=True)))
+            self.after(0, lambda e=e: (self._fim_pensando(),
+                                       self._bolha(f"⚠ Erro: {e}",
+                                                   ferramenta=True)))
         nucleo.salvar_chat(self.chat, nucleo.CFG["modelo"])
         self.after(0, self._atualizar_status)
 
