@@ -25,8 +25,10 @@ def executar(args):
     dados = urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}),
                     timeout=120).read()
 
-    pasta = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "imagens")
+    pasta = r"D:\JarvisTemp"
+    if not os.path.isdir(pasta):
+        pasta = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "imagens")
     os.makedirs(pasta, exist_ok=True)
     caminho = os.path.join(pasta, f"img_{int(t.time())}.png")
     with open(caminho, "wb") as f:

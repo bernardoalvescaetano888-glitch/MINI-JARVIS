@@ -406,9 +406,10 @@ class JarvisApp(ctk.CTk):
                                                          "smollm2:360m")):
                 nucleo.CFG["aviso_ram_dado"] = True
                 nucleo.salvar_cfg(nucleo.CFG)
-                self._bolha("🟡 Sua RAM está muito cheia! Sugestão: troque "
-                            "para uma IA mais leve na Vitrine (qwen2.5:0.5b) "
-                            "pra não travar.", ferramenta=True)
+                self._bolha("💛 RAM cheia (normal com 4GB!). Truque: com "
+                            "WiFi ligado eu uso a nuvem e **zero** RAM; "
+                            "offline, feche outros programas ou use a IA "
+                            "smollm2:360m (a mais leve).", ferramenta=True)
         except Exception:
             pass
         self.after(5000, self._monitorar_sistema)
@@ -1412,6 +1413,18 @@ class JarvisApp(ctk.CTk):
     def _sair(self):
         try:
             nucleo.salvar_chat(self.chat, nucleo.CFG["modelo"])
+        except Exception:
+            pass
+        # "puf!": apaga os temporários do app (D:\JarvisTemp)
+        try:
+            import shutil
+            if os.path.isdir(nucleo.TEMP_DIR):
+                for item in os.listdir(nucleo.TEMP_DIR):
+                    alvo = os.path.join(nucleo.TEMP_DIR, item)
+                    if os.path.isdir(alvo):
+                        shutil.rmtree(alvo, ignore_errors=True)
+                    else:
+                        os.remove(alvo)
         except Exception:
             pass
         # despedida: o Jarvis fala "até logo" antes de fechar
